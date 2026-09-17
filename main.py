@@ -2,124 +2,160 @@ import feedparser
 import requests
 import json
 import time
-import os
 import smtplib
 from email.mime.text import MIMEText
-from email.header import Header
+from email.utils import formatdate
+import os
 
-# ===================== CONFIG =====================
-TARGET_TICKERS = {
-    "CNOOC": ["中国海洋石油", "中海油"],
-    "Tencent": ["腾讯", "腾讯控股"],
-    "PDD": ["拼多多", "PDD"],
-    "Xindong": ["心动公司", "心动"],
-    "紫金矿业": ["紫金矿业"],
-    "Meta": ["Meta", "Facebook"],
-    "宁德时代": ["宁德时代"],
-    "TSM": ["台积电", "TSMC"],
-    "Amazon": ["Amazon", "亚马逊"],
-    "Google": ["Google", "Alphabet"]
-}
-RELEVANCE_THRESHOLD = 6
-NOVITA_MODEL = "qwen/qwen-2.5-72b-instruct"
+# ========== 配置区 ==========
+# 目标标的列表
+TARGET_STOCKS = [
+    "中国海洋石油", "腾讯", "心动公司", "PDD",
+    "Meta", "宁德时代", "Google", "TSM", "紫金矿业", "Amazon"
+]
+RELEVANCE_THRESHOLD = 6  # 相关性阈值 >=6才保留
 
-RSS_SOURCES = [
-    "https://feeds.bloomberg.com/energy/news.rss",
-    "https://seekingalpha.com/tag/china-stocks.xml",
-    "https://www.reutersagency.com/feed/?taxonomy=best-sectors&post_type=best",
-    "https://www.ft.com/rss/companies",
-    "https://feeds.marketwatch.com/marketwatch/industrials/",
+# Novita API
+NOVITA_API_KEY = os.getenv("NOVITA_API_KEY")
+MODEL_NAME = "qwen/qwen-2.5-72b-instruct"
+API_URL = "https://api.novita.ai/v3/openai/chat/completions"
+
+# Gmail 邮件配置
+MAIL_USER = os.getenv("GMAIL_USER")
+MAIL_PASS = os.getenv("GMAIL_APP_PASSWORD")
+TARGET_EMAIL = os.getenv("TARGET_EMAIL")
+
+# RSS源列表，已移除失效FT源，新增稳定港股/中概源
+RSS_FEEDS = [
+    "https://www.reutersagency.com/feed/?taxonomy=best-sectors&post_type=best&topic=china",
+    "https://www.scmp.com/rss/2/feed",
+    "https://feeds.seekingalpha.com/tags/china-stocks.xml",
+    "https://www.aastocks.com/en/stock/rss/newsrss.xml",
+    "https://www.cnbc.com/id/10000104/device/rss/rss.xml",
+    "https://www.caixinglobal.com/feed/"
 ]
 
-NOVITA_API_KEY = os.getenv("NOVITA_API_KEY")
-GMAIL_USER = os.getenv("GMAIL_USER")
-GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
-TARGET_EMAIL = os.getenv("TARGET_EMAIL")
-# ==================================================
+# 本地缓存，用于新闻去重
+seen_links = set()
+# ============================
 
-def novita_analyze(title, summary):
-    prompt = f"""
-你是专业投研分析师。
-标的列表：{list(TARGET_TICKERS.keys())}
-任务：
-1. 判断这条新闻和哪个标的相关性，只选**相关性最高的单一标的**；无关返回标的名称：NONE
-2. 相关性打分：0~10。10=极强直接影响财报/业务；0=完全无关
-3. 简短一句话：新闻情绪（利好/利空/中性）
-输出严格JSON，不要多余文字：
-{{"ticker":"xxx","score":数字,"sentiment":"xxx"}}
-新闻标题：{title}
-新闻正文：{summary}
+def call_llm_analysis(title, summary):
+    """调用Novita大模型，返回：匹配标的、相关性分数、情绪、原文摘要"""
+    sys_prompt = f"""
+你是专业港股/美股投研分析师。
+标的列表：{TARGET_STOCKS}
+任务：分析这篇新闻标题+摘要。输出严格JSON，不要额外文字。
+输出字段：
+1. matched_stock：只返回【相关性最高的单个标的名称】，无匹配填null
+2. relevance_score：0~10整数，10=极强相关
+3. sentiment：positive / neutral / negative
+4. brief_summary：中文简短摘要，50字以内
+
+规则：
+- 只选一个最相关标的；无关则matched_stock=null，分数0
+- 相关性≥6才属于有效资讯
 """
-    headers = {"Authorization": f"Bearer {NOVITA_API_KEY}", "Content-Type": "application/json"}
+    user_content = f"标题：{title}\n摘要：{summary}"
     payload = {
-        "model": NOVITA_MODEL,
-        "messages": [{"role":"user","content":prompt}],
-        "temperature":0.1
+        "model": MODEL_NAME,
+        "messages": [
+            {"role": "system", "content": sys_prompt},
+            {"role": "user", "content": user_content}
+        ],
+        "temperature": 0.2
     }
-    resp = requests.post("https://api.novita.ai/v3/openai/chat/completions", headers=headers, json=payload, timeout=60)
-    res_json = resp.json()
-    content = res_json["choices"][0]["message"]["content"].strip()
-    return json.loads(content)
+    headers = {
+        "Authorization": f"Bearer {NOVITA_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    try:
+        resp = requests.post(API_URL, headers=headers, json=payload, timeout=60)
+        resp.raise_for_status()
+        data = resp.json()
+        raw = data["choices"][0]["message"]["content"].strip()
+        # 清洗markdown代码块
+        if raw.startswith("```json"):
+            raw = raw.replace("```json", "").replace("```", "").strip()
+        return json.loads(raw)
+    except Exception as e:
+        print(f"AI分析失败: {str(e)}")
+        return None
 
-def send_email(md_content):
-    msg = MIMEText(md_content, "plain", "utf-8")
-    msg["Subject"] = Header("【每日投研RSS简报】", "utf-8")
-    msg["From"] = GMAIL_USER
+def fetch_rss(feed_url):
+    print(f"\n【源】{feed_url}")
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+        res = requests.get(feed_url, timeout=15, headers=headers)
+        feed = feedparser.parse(res.text)
+        entries = feed.entries
+        print(f"共{len(entries)}条资讯")
+        return entries
+    except Exception as e:
+        print(f"⚠️ 该源抓取失败：{str(e)}")
+        return []
+
+def send_email(markdown_content):
+    msg = MIMEText(markdown_content, "plain", "utf-8")
+    msg["Subject"] = "【每日投研RSS简报】"
+    msg["From"] = MAIL_USER
     msg["To"] = TARGET_EMAIL
-    server = smtplib.SMTP_SSL("smtp.gmail.com", 465)
-    server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
-    server.sendmail(GMAIL_USER, TARGET_EMAIL, msg.as_string())
-    server.quit()
+    msg["Date"] = formatdate(localtime=True)
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+        smtp.login(MAIL_USER, MAIL_PASS)
+        smtp.send_message(msg)
+    print("✅ 简报邮件发送完成")
 
 def main():
-    news_pool = []
-    seen_link = set()
-    for rss_url in RSS_SOURCES:
-        try:
-            feed = feedparser.parse(rss_url)
-            for entry in feed.entries[:15]:
-                link = entry.get("link","")
-                if link in seen_link:
-                    continue
-                seen_link.add(link)
-                title = entry.get("title","")
-                summary = entry.get("summary","")
-                ai_res = novita_analyze(title, summary)
-                ticker = ai_res["ticker"]
-                score = int(ai_res["score"])
-                sentiment = ai_res["sentiment"]
-                if ticker != "NONE" and score >= RELEVANCE_THRESHOLD:
-                    news_pool.append({
-                        "ticker": ticker,
-                        "score": score,
-                        "sentiment": sentiment,
-                        "title": title,
-                        "link": link
-                    })
-                time.sleep(0.3)
-        except Exception as e:
-            print(f"RSS源抓取失败 {rss_url} : {e}")
+    stock_group = {}
+    # 初始化分组
+    for s in TARGET_STOCKS:
+        stock_group[s] = []
 
-    # 按标的分组
-    grouped = {}
-    for item in news_pool:
-        t = item["ticker"]
-        if t not in grouped:
-            grouped[t] = []
-        grouped[t].append(item)
+    for feed_url in RSS_FEEDS:
+        entries = fetch_rss(feed_url)
+        for entry in entries:
+            link = entry.get("link", "")
+            if not link or link in seen_links:
+                continue
+            seen_links.add(link)
+            title = entry.get("title", "")
+            summary = entry.get("summary", "")
+            ai_result = call_llm_analysis(title, summary)
+            time.sleep(0.3)
+            if not ai_result:
+                continue
+            match_stock = ai_result.get("matched_stock")
+            score = ai_result.get("relevance_score", 0)
+            if match_stock is None or score < RELEVANCE_THRESHOLD:
+                continue
+            # 存入对应标的分组
+            stock_group[match_stock].append({
+                "title": title,
+                "link": link,
+                "score": score,
+                "sentiment": ai_result["sentiment"],
+                "summary": ai_result["brief_summary"]
+            })
 
-    # 构建Markdown简报
-    md = "# 每日股票RSS资讯简报\n"
-    md += f"生成时间: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-    for ticker, items in grouped.items():
-        md += f"## {ticker}\n"
-        for n in items:
-            md += f"- 【相关性:{n['score']}｜{n['sentiment']}】[{n['title']}]({n['link']})\n"
-        md += "\n"
-    if len(news_pool) == 0:
-        md += "> 今日没有相关性≥6的资讯\n"
-    send_email(md)
-    print("✅ 简报邮件发送完成")
+    # 生成Markdown简报
+    md_lines = []
+    md_lines.append("# 每日股票RSS资讯简报")
+    md_lines.append(f"生成时间: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    has_news = False
+    for stock_name, news_list in stock_group.items():
+        if len(news_list) == 0:
+            continue
+        has_news = True
+        md_lines.append(f"\n## {stock_name}")
+        # 按相关性分数降序排序
+        news_list.sort(key=lambda x:x["score"], reverse=True)
+        for news in news_list:
+            md_lines.append(f"- 【相关性:{news['score']} | {news['sentiment']}】[{news['title']}]({news['link']})")
+            md_lines.append(f"  > {news['summary']}")
+    if not has_news:
+        md_lines.append(f"\n> 今日没有相关性≥{RELEVANCE_THRESHOLD}的资讯")
+    final_md = "\n".join(md_lines)
+    send_email(final_md)
 
 if __name__ == "__main__":
     main()
