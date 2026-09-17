@@ -25,15 +25,21 @@ MAIL_USER = os.getenv("GMAIL_USER")
 MAIL_PASS = os.getenv("GMAIL_APP_PASSWORD")
 TARGET_EMAIL = os.getenv("TARGET_EMAIL")
 
-# RSS源列表，移除所有失效源，更换稳定源
+# RSS源列表：原有稳定源 + 新增宏观/券商简讯/港股中文源
 RSS_FEEDS = [
+    # 原有稳定源
     "https://www.scmp.com/rss/2/feed",
     "https://www.reutersagency.com/feed/?taxonomy=best-sectors&post_type=best&topic=china",
     "https://www1.hkexnews.hk/rss/news.ashx",
-    "https://techcrunch.com/feed/"
+    "https://techcrunch.com/feed/",
+    # 新增：宏观经济、投行简讯、港股分析、国内商业数据
+    "https://www.bloomberg.com/politics/feeds/economy.rss",
+    "https://www.ft.com/rss/companies",
+    "https://www.aastocks.com/rss/analysis.xml",
+    "https://www.chinadaily.com.cn/rss/business.xml"
 ]
 
-# 本地缓存，用于新闻去重
+# 本地缓存，用于新闻去重（单次运行内去重）
 seen_links = set()
 # ============================
 
@@ -42,7 +48,7 @@ def call_llm_analysis(title, summary):
     sys_prompt = f"""
 你是专业港股/美股投研分析师。
 标的列表：{TARGET_STOCKS}
-任务：分析这篇新闻标题+摘要。输出严格JSON，不要额外文字。
+任务：分析这篇新闻/研报简讯标题+摘要。输出严格JSON，不要额外文字。
 输出字段：
 1. matched_stock：只返回【相关性最高的单个标的名称】，无匹配填null
 2. relevance_score：0~10整数，10=极强相关
@@ -50,6 +56,7 @@ def call_llm_analysis(title, summary):
 4. brief_summary：中文简短摘要，50字以内
 
 规则：
+- 资讯类型包含：公司新闻、券商投行观点、行业数据、进出口、消费PMI、行业协会公告
 - 只选一个最相关标的；无关则matched_stock=null，分数0
 - 相关性≥6才属于有效资讯
 """
@@ -71,7 +78,7 @@ def call_llm_analysis(title, summary):
         resp.raise_for_status()
         data = resp.json()
         raw = data["choices"][0]["message"]["content"].strip()
-        # 清洗markdown代码块
+        # 清洗markdown代码块标记
         if raw.startswith("```json"):
             raw = raw.replace("```json", "").replace("```", "").strip()
         return json.loads(raw)
@@ -105,7 +112,7 @@ def send_email(markdown_content):
 
 def main():
     stock_group = {}
-    # 初始化分组
+    # 初始化标的分组
     for s in TARGET_STOCKS:
         stock_group[s] = []
 
