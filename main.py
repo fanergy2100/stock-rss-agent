@@ -25,14 +25,12 @@ MAIL_USER = os.getenv("GMAIL_USER")
 MAIL_PASS = os.getenv("GMAIL_APP_PASSWORD")
 TARGET_EMAIL = os.getenv("TARGET_EMAIL")
 
-# RSS源列表，已移除失效FT源，新增稳定港股/中概源
+# RSS源列表，移除所有失效源，更换稳定源
 RSS_FEEDS = [
-    "https://www.reutersagency.com/feed/?taxonomy=best-sectors&post_type=best&topic=china",
     "https://www.scmp.com/rss/2/feed",
-    "https://feeds.seekingalpha.com/tags/china-stocks.xml",
-    "https://www.aastocks.com/en/stock/rss/newsrss.xml",
-    "https://www.cnbc.com/id/10000104/device/rss/rss.xml",
-    "https://www.caixinglobal.com/feed/"
+    "https://www.reutersagency.com/feed/?taxonomy=best-sectors&post_type=best&topic=china",
+    "https://www1.hkexnews.hk/rss/news.ashx",
+    "https://techcrunch.com/feed/"
 ]
 
 # 本地缓存，用于新闻去重
