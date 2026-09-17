@@ -1,0 +1,30 @@
+name: Stock RSS Daily Agent
+on:
+  schedule:
+    # UTC 22:00 → 日本时间次日07:00（每日早上7点执行）
+    - cron: '0 22 * * *'
+  # 允许手动点击触发测试
+  workflow_dispatch:
+
+jobs:
+  run_agent:
+    runs-on: ubuntu-latest
+    env:
+      NOVITA_API_KEY: ${{ secrets.NOVITA_API_KEY }}
+      GMAIL_USER: ${{ secrets.GMAIL_USER }}
+      GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+      TARGET_EMAIL: ${{ secrets.TARGET_EMAIL }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install feedparser requests
+
+      - name: Run main script
+        run: python main.py
