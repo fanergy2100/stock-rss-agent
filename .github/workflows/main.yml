@@ -1,15 +1,18 @@
 name: Main Script Run
 
 on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
+  workflow_dispatch: # 支持手动触发
   schedule:
-    - cron: '0 1 * * *'
+    - cron: '0 0 * * *' # UTC时间每日0点定时运行
 
 jobs:
   run-task:
     runs-on: ubuntu-latest
+    env:
+      API_KEY: ${{ secrets.NOVITA_API_KEY }}
+      GMAIL_USER: ${{ secrets.GMAIL_USER }}
+      GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+      TARGET_EMAIL: ${{ secrets.TARGET_EMAIL }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -25,7 +28,4 @@ jobs:
           pip install requests feedparser
 
       - name: Run main python script
-        env:
-          API_KEY: ${{ secrets.API_KEY }}
-          MAIL_PWD: ${{ secrets.MAIL_PWD }}
         run: python main.py
