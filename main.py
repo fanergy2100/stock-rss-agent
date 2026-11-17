@@ -94,18 +94,16 @@ def fetch_rss(feed_url):
     print(f"\n【源】{feed_url}")
     try:
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
-        # RSS抓取走Cloudflare代理
-        proxy_url = PROXY_PREFIX + quote(feed_url, safe='')
-        res = requests.get(proxy_url, timeout=15, headers=headers)
+        # ========== 去掉代理，直接请求源地址 ==========
+        res = requests.get(feed_url, timeout=15, headers=headers)
+        res.raise_for_status()
         feed = feedparser.parse(res.text)
         entries = feed.entries
         print(f"共{len(entries)}条资讯")
         return entries
     except Exception as e:
-        print(f"⚠️ 该源抓取失败：{str(e)}")
+        print(f"⚠️ 该源抓取失败: {str(e)}")
         return []
-
-
 def send_email(markdown_content):
     msg = MIMEText(markdown_content, "plain", "utf-8")
     msg["Subject"] = "【每日投研RSS简报】"
