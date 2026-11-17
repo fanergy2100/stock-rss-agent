@@ -1,3 +1,6 @@
+from urllib.parse import quote
+# Cloudflare RSS代理
+PROXY_PREFIX = "https://rss-proxy-stock.fanergy.workers.dev/proxy?url="
 import feedparser
 import requests
 import json
@@ -30,7 +33,6 @@ RSS_FEEDS = [
     # 原有稳定源
     "https://www.scmp.com/rss/2/feed",
     "https://www.reutersagency.com/feed/?taxonomy=best-sectors&post_type=best&topic=china",
-    "https://www1.hkexnews.hk/rss/news.ashx",
     "https://techcrunch.com/feed/",
     # 新增：宏观经济、投行简讯、港股分析、国内商业数据
     "https://www.bloomberg.com/politics/feeds/economy.rss",
@@ -74,7 +76,8 @@ def call_llm_analysis(title, summary):
         "Content-Type": "application/json"
     }
     try:
-        resp = requests.post(API_URL, headers=headers, json=payload, timeout=60)
+        proxy_url = PROXY_PREFIX + quote(rss_url, safe='')
+        resp = requests.get(proxy_url, timeout=15, headers=headers)
         resp.raise_for_status()
         data = resp.json()
         raw = data["choices"][0]["message"]["content"].strip()
