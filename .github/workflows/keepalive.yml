@@ -16,4 +16,4 @@ jobs:
         with:
           workflow_files: "main.yml"
           time_elapsed: 45
-          use_api: true
+          use_api: false
