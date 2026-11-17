@@ -5,12 +5,15 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: write
+  contents: write
 
 jobs:
   keepalive:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Keep repository & workflow alive
         uses: gautamkrishnar/keepalive-workflow@v2
         with:
