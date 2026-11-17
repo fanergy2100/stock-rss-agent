@@ -28,15 +28,19 @@ MAIL_PASS = os.getenv("GMAIL_APP_PASSWORD")
 TARGET_EMAIL = os.getenv("TARGET_EMAIL")
 # RSS源列表：原有稳定源 + 新增宏观/券商简讯/港股中文源
 RSS_FEEDS = [
-    # 原有稳定源
-    "https://www.scmp.com/rss/2/feed",
-    "https://www.reutersagency.com/feed/?taxonomy=best-sectors&post_type=best&topic=china",
-    "https://techcrunch.com/feed/",
-    # 新增：宏观经济、投行简讯、港股分析、国内商业数据
-    "https://www.bloomberg.com/politics/feeds/economy.rss",
-    "https://www.ft.com/rss/companies",
-    "https://www.aastocks.com/rss/analysis.xml",
-    "https://www.chinadaily.com.cn/rss/business.xml"
+    # 原有
+    {"name":"SCMP","url":"https://www.scmp.com/rss/feed"},
+    {"name":"Reuters China","url":"https://www.reutersagency.com/feed/?taxonomy=best-sectors&post_type=best&topic=china"},
+    {"name":"TechCrunch","url":"https://techcrunch.com/feed/"},
+    {"name":"Bloomberg Economy","url":"https://www.bloomberg.com/politics/feeds/economy.rss"},
+    {"name":"FT Companies","url":"https://www.ft.com/rss/companies"},
+    {"name":"AAStocks","url":"https://www.aastocks.com/rss/analysis.xml"},
+    {"name":"China Daily Business","url":"https://www.chinadaily.com.cn/rss/business.xml"},
+
+    # 新增
+    {"name":"CNBC Business","url":"https://www.cnbc.com/id/100003114/device/rss/rss.html"},
+    {"name":"MarketWatch MarketPulse","url":"https://feeds.marketwatch.com/marketwatch/marketpulse/"},
+    {"name":"Seeking Alpha News","url":"https://seekingalpha.com/feed.xml"}
 ]
 # 本地缓存，用于新闻去重（单次运行内去重）
 seen_links = set()
