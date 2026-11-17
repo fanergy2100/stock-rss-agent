@@ -88,13 +88,11 @@ def call_llm_analysis(title, summary):
     except Exception as e:
         print(f"AI分析失败: {str(e)}")
         return None
-
-
-def fetch_rss(feed_url):
-    print(f"\n【源】{feed_url}")
+def fetch_rss(feed_item):
+    print(f"\n【源】{feed_item}")
     try:
+        feed_url = feed_item["url"]
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
-        # ========== 去掉代理，直接请求源地址 ==========
         res = requests.get(feed_url, timeout=15, headers=headers)
         res.raise_for_status()
         feed = feedparser.parse(res.text)
