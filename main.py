@@ -93,7 +93,9 @@ def fetch_rss(feed_item):
     try:
         feed_url = feed_item["url"]
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
-        res = requests.get(feed_url, timeout=15, headers=headers)
+        # RSS抓取走Cloudflare代理
+        proxy_url = PROXY_PREFIX + quote(feed_url, safe='')
+        res = requests.get(proxy_url, timeout=(8,15), headers=headers)
         res.raise_for_status()
         feed = feedparser.parse(res.text)
         entries = feed.entries
