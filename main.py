@@ -20,7 +20,7 @@ TARGET_STOCKS = [
 RELEVANCE_THRESHOLD = 6  # 相关性阈值 >=6才保留
 # Novita API
 NOVITA_API_KEY = os.getenv("NOVITA_API_KEY")
-MODEL_NAME = "qwen/qwen-2.5-72b-instruct"
+MODEL_NAME = "qwen/qwen3.8-max"
 API_URL = "https://api.novita.ai/openai/v1/chat/completions"
 # Gmail 邮件配置
 MAIL_USER = os.getenv("GMAIL_USER")
