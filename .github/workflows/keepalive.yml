@@ -1,7 +1,8 @@
 name: Keepalive
 on:
   schedule:
-    - cron: '0 0 * * *'
+    # 每月1号 UTC 0点跑一次，足够防止60天休眠
+    - cron: '0 0 1 * *'
   workflow_dispatch:
 
 permissions:
@@ -11,12 +12,18 @@ jobs:
   keepalive:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Keep repository & workflow alive
-        uses: gautamkrishnar/keepalive-workflow@v2
         with:
-          workflow_files: "main.yml"
-          time_elapsed: 45
-          use_api: false
+          fetch-depth: 0
+
+      - name: Configure git user
+        run: |
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "4189828+github-actions[bot]@users.noreply.github.com"
+
+      - name: Empty commit to keep schedule alive
+        run: |
+          git pull
+          git commit --allow-empty -m "chore: empty heartbeat to prevent scheduled workflow suspension"
+          git push
