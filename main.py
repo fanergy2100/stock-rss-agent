@@ -1,6 +1,3 @@
-from urllib.parse import quote
-# Cloudflare RSS代理
-PROXY_PREFIX = "https://rss-proxy-stock.fanergy.workers.dev/proxy?url="
 import feedparser
 import requests
 import json
@@ -9,6 +6,10 @@ import smtplib
 from email.mime.text import MIMEText
 from email.utils import formatdate
 import os
+from urllib.parse import quote
+
+# Cloudflare RSS代理
+PROXY_PREFIX = "https://rss-proxy-stock.fanergy.workers.dev/proxy?url="
 
 # ========== 配置区 ==========
 # 目标标的列表
@@ -17,17 +18,14 @@ TARGET_STOCKS = [
     "Meta", "宁德时代", "Google", "TSM", "紫金矿业", "Amazon"
 ]
 RELEVANCE_THRESHOLD = 6  # 相关性阈值 >=6才保留
-
 # Novita API
 NOVITA_API_KEY = os.getenv("NOVITA_API_KEY")
 MODEL_NAME = "qwen/qwen-2.5-72b-instruct"
 API_URL = "https://api.novita.ai/v3/openai/chat/completions"
-
 # Gmail 邮件配置
 MAIL_USER = os.getenv("GMAIL_USER")
 MAIL_PASS = os.getenv("GMAIL_APP_PASSWORD")
 TARGET_EMAIL = os.getenv("TARGET_EMAIL")
-
 # RSS源列表：原有稳定源 + 新增宏观/券商简讯/港股中文源
 RSS_FEEDS = [
     # 原有稳定源
@@ -40,10 +38,10 @@ RSS_FEEDS = [
     "https://www.aastocks.com/rss/analysis.xml",
     "https://www.chinadaily.com.cn/rss/business.xml"
 ]
-
 # 本地缓存，用于新闻去重（单次运行内去重）
 seen_links = set()
 # ============================
+
 
 def call_llm_analysis(title, summary):
     """调用Novita大模型，返回：匹配标的、相关性分数、情绪、原文摘要"""
@@ -56,7 +54,6 @@ def call_llm_analysis(title, summary):
 2. relevance_score：0~10整数，10=极强相关
 3. sentiment：positive / neutral / negative
 4. brief_summary：中文简短摘要，50字以内
-
 规则：
 - 资讯类型包含：公司新闻、券商投行观点、行业数据、进出口、消费PMI、行业协会公告
 - 只选一个最相关标的；无关则matched_stock=null，分数0
@@ -76,8 +73,7 @@ def call_llm_analysis(title, summary):
         "Content-Type": "application/json"
     }
     try:
-        proxy_url = PROXY_PREFIX + quote(rss_url, safe='')
-        resp = requests.get(proxy_url, timeout=15, headers=headers)
+        resp = requests.post(API_URL, json=payload, timeout=30, headers=headers)
         resp.raise_for_status()
         data = resp.json()
         raw = data["choices"][0]["message"]["content"].strip()
@@ -89,11 +85,14 @@ def call_llm_analysis(title, summary):
         print(f"AI分析失败: {str(e)}")
         return None
 
+
 def fetch_rss(feed_url):
     print(f"\n【源】{feed_url}")
     try:
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
-        res = requests.get(feed_url, timeout=15, headers=headers)
+        # RSS抓取走Cloudflare代理
+        proxy_url = PROXY_PREFIX + quote(feed_url, safe='')
+        res = requests.get(proxy_url, timeout=15, headers=headers)
         feed = feedparser.parse(res.text)
         entries = feed.entries
         print(f"共{len(entries)}条资讯")
@@ -101,6 +100,7 @@ def fetch_rss(feed_url):
     except Exception as e:
         print(f"⚠️ 该源抓取失败：{str(e)}")
         return []
+
 
 def send_email(markdown_content):
     msg = MIMEText(markdown_content, "plain", "utf-8")
@@ -113,12 +113,12 @@ def send_email(markdown_content):
         smtp.send_message(msg)
     print("✅ 简报邮件发送完成")
 
+
 def main():
     stock_group = {}
     # 初始化标的分组
     for s in TARGET_STOCKS:
         stock_group[s] = []
-
     for feed_url in RSS_FEEDS:
         entries = fetch_rss(feed_url)
         for entry in entries:
@@ -144,7 +144,6 @@ def main():
                 "sentiment": ai_result["sentiment"],
                 "summary": ai_result["brief_summary"]
             })
-
     # 生成Markdown简报
     md_lines = []
     md_lines.append("# 每日股票RSS资讯简报")
@@ -156,7 +155,7 @@ def main():
         has_news = True
         md_lines.append(f"\n## {stock_name}")
         # 按相关性分数降序排序
-        news_list.sort(key=lambda x:x["score"], reverse=True)
+        news_list.sort(key=lambda x: x["score"], reverse=True)
         for news in news_list:
             md_lines.append(f"- 【相关性:{news['score']} | {news['sentiment']}】[{news['title']}]({news['link']})")
             md_lines.append(f"  > {news['summary']}")
@@ -164,6 +163,7 @@ def main():
         md_lines.append(f"\n> 今日没有相关性≥{RELEVANCE_THRESHOLD}的资讯")
     final_md = "\n".join(md_lines)
     send_email(final_md)
+
 
 if __name__ == "__main__":
     main()
